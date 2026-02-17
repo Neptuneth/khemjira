@@ -1,43 +1,48 @@
 <?php
+// ===============================
+// ป้องกัน Headers already sent
+// ต้องเป็นบรรทัดแรกสุด ห้ามมีช่องว่างหรือ BOM ก่อนหน้า
+ob_start();
 
-
-// ตั้งค่าการแสดงข้อผิดพลาด (ใช้ตอนพัฒนา)
+// ===============================
+// แสดง Error (ใช้เฉพาะตอนพัฒนา)
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
-// ตั้งค่า Timezone เป็นเวลาประเทศไทย
+// ===============================
+// ตั้งค่า Timezone
 date_default_timezone_set('Asia/Bangkok');
 
-// ตั้งค่าการเชื่อมต่อฐานข้อมูล
-define('DB_HOST', 'localhost');           // ชื่อ Host (ปกติคือ localhost)
-define('DB_USER', 'root');                // Username (XAMPP ใช้ root)
-define('DB_PASS', '');                    // Password (XAMPP ปล่อยว่าง)
-define('DB_NAME', 'khemjira_warehouse');  // ชื่อฐานข้อมูล
+// ===============================
+// Database Config
+define('DB_HOST', 'localhost');
+define('DB_USER', 'root');
+define('DB_PASS', '');
+define('DB_NAME', 'khemjira_warehouse');
 
-// สร้างการเชื่อมต่อ
+// ===============================
+// เชื่อมต่อฐานข้อมูล
 $conn = new mysqli(DB_HOST, DB_USER, DB_PASS, DB_NAME);
-
-// ตรวจสอบการเชื่อมต่อ
 if ($conn->connect_error) {
-    die("การเชื่อมต่อล้มเหลว: " . $conn->connect_error);
+    die('การเชื่อมต่อล้มเหลว: ' . $conn->connect_error);
 }
+$conn->set_charset('utf8mb4');
 
-// ตั้งค่า Character Set เป็น UTF-8 เพื่อรองรับภาษาไทย
-$conn->set_charset("utf8mb4");
-
-// เริ่ม Session (สำหรับเก็บข้อมูล Login)
+// ===============================
+// Session
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-// ฟังก์ชันช่วยเหลือ
+// ===============================
+// Helper Functions
 function redirect($url) {
-    header("Location: $url");
-    exit();
+    header("Location: {$url}");
+    exit;
 }
 
 function isLoggedIn() {
-    return isset($_SESSION['user_id']);
+    return !empty($_SESSION['user_id']);
 }
 
 function requireLogin() {
@@ -46,28 +51,39 @@ function requireLogin() {
     }
 }
 
-// ฟังก์ชันป้องกัน SQL Injection
-function clean($data) {
-    global $conn;
-    return mysqli_real_escape_string($conn, trim($data));
+function isAdmin() {
+    return isset($_SESSION['role']) && $_SESSION['role'] === 'admin';
 }
 
-// ฟังก์ชันแสดงข้อความแจ้งเตือน
+// ===============================
+// Alert Functions
 function setAlert($type, $message) {
-    $_SESSION['alert_type'] = $type;  // success, danger, warning, info
+    $_SESSION['alert_type'] = $type;       // success | danger | warning | info
     $_SESSION['alert_message'] = $message;
 }
 
 function showAlert() {
-    if (isset($_SESSION['alert_message'])) {
-        $type = $_SESSION['alert_type'];
-        $message = $_SESSION['alert_message'];
-        echo "<div class='alert alert-$type alert-dismissible fade show' role='alert'>
-                $message
-                <button type='button' class='btn-close' data-bs-dismiss='alert'></button>
-              </div>";
-        unset($_SESSION['alert_message']);
-        unset($_SESSION['alert_type']);
+    if (!empty($_SESSION['alert_message'])) {
+        $type = $_SESSION['alert_type'] ?? 'info';
+        $message = htmlspecialchars($_SESSION['alert_message'], ENT_QUOTES, 'UTF-8');
+
+        echo "
+        <div class='alert alert-{$type} alert-dismissible fade show' role='alert'>
+            {$message}
+            <button type='button' class='btn-close' data-bs-dismiss='alert'></button>
+        </div>
+        ";
+
+        unset($_SESSION['alert_type'], $_SESSION['alert_message']);
     }
 }
-?>
+
+function clean($data)
+{
+    global $conn;
+    return htmlspecialchars(
+        trim($conn->real_escape_string($data)),
+        ENT_QUOTES,
+        'UTF-8'
+    );
+}

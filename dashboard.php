@@ -1,123 +1,128 @@
 <?php
-
-
 require_once 'config.php';
+requireLogin();
+
 $pageTitle = 'Dashboard';
 include 'includes/header.php';
 
-// ดึงข้อมูลสถิติ
+// ===============================
+// เตรียมค่าเริ่มต้น
 $stats = [
     'total_products' => 0,
-    'total_stock' => 0,
-    'low_stock' => 0,
-    'out_stock' => 0
+    'total_stock'    => 0,
+    'low_stock'      => 0,
+    'out_stock'      => 0
 ];
 
+// ===============================
 // นับจำนวนสินค้าทั้งหมด
-$result = $conn->query("SELECT COUNT(*) as total FROM products");
-$stats['total_products'] = $result->fetch_assoc()['total'];
+$result = $conn->query("SELECT COUNT(*) AS total FROM products");
+if ($result) {
+    $stats['total_products'] = (int)$result->fetch_assoc()['total'];
+}
 
+// ===============================
 // นับสต็อกรวม
-$result = $conn->query("SELECT SUM(quantity) as total FROM inventory");
-$row = $result->fetch_assoc();
-$stats['total_stock'] = $row['total'] ?? 0;
+$result = $conn->query("SELECT SUM(quantity) AS total FROM inventory");
+if ($result) {
+    $stats['total_stock'] = (int)($result->fetch_assoc()['total'] ?? 0);
+}
 
-// สินค้าใกล้หมด (quantity <= min_stock)
+// ===============================
+// สินค้าใกล้หมด
 $result = $conn->query("
-    SELECT COUNT(*) as total 
-    FROM inventory i 
-    JOIN products p ON i.product_id = p.product_id 
+    SELECT COUNT(*) AS total
+    FROM inventory i
+    JOIN products p ON i.product_id = p.product_id
     WHERE i.quantity <= p.min_stock AND i.quantity > 0
 ");
-$stats['low_stock'] = $result->fetch_assoc()['total'];
+if ($result) {
+    $stats['low_stock'] = (int)$result->fetch_assoc()['total'];
+}
 
+// ===============================
 // สินค้าหมด
-$result = $conn->query("SELECT COUNT(*) as total FROM inventory WHERE quantity = 0");
-$stats['out_stock'] = $result->fetch_assoc()['total'];
+$result = $conn->query("SELECT COUNT(*) AS total FROM inventory WHERE quantity = 0");
+if ($result) {
+    $stats['out_stock'] = (int)$result->fetch_assoc()['total'];
+}
 
-// ดึงรายการสินค้าที่ต้องเร่งสั่ง
+// ===============================
+// สินค้าที่ต้องจัดซื้อ
 $lowStockProducts = $conn->query("
-    SELECT p.product_code, p.product_name, i.quantity, p.min_stock, p.unit
+    SELECT 
+        p.product_code,
+        p.product_name,
+        i.quantity,
+        p.min_stock,
+        p.unit
     FROM products p
     JOIN inventory i ON p.product_id = i.product_id
     WHERE i.quantity <= p.min_stock
     ORDER BY i.quantity ASC
     LIMIT 10
 ");
+
+// ===============================
+// สินค้ายอดนิยมในการเบิก (Top 5)
+$popularProducts = $conn->query("
+    SELECT 
+        p.product_name,
+        SUM(gii.quantity) AS total_issue
+    FROM goods_issue_items gii
+    JOIN products p ON gii.product_id = p.product_id
+    GROUP BY gii.product_id
+    ORDER BY total_issue DESC
+    LIMIT 5
+");
+
+$chartLabels = [];
+$chartData   = [];
+
+if ($popularProducts && $popularProducts->num_rows > 0) {
+    while ($row = $popularProducts->fetch_assoc()) {
+        $chartLabels[] = $row['product_name'];
+        $chartData[]   = (int)$row['total_issue'];
+    }
+}
 ?>
 
 <div class="page-header">
     <h3 class="mb-0">
-        <i class="fas fa-home text-primary me-2"></i>
-        Dashboard
+        <i class="fas fa-home text-primary me-2"></i> Dashboard
     </h3>
     <p class="text-muted mb-0">ภาพรวมระบบคลังสินค้า</p>
 </div>
 
 <!-- สถิติ -->
 <div class="row">
-    <div class="col-md-3">
+<?php
+$cards = [
+    ['สินค้าทั้งหมด', $stats['total_products'], 'รายการ', 'fa-box', 'primary'],
+    ['สต็อกรวม', $stats['total_stock'], 'ชิ้น', 'fa-cubes', 'success'],
+    ['สินค้าใกล้หมด', $stats['low_stock'], 'รายการ', 'fa-exclamation-triangle', 'warning'],
+    ['สินค้าหมด', $stats['out_stock'], 'รายการ', 'fa-times-circle', 'danger'],
+];
+foreach ($cards as $c):
+?>
+    <div class="col-md-3 mb-3">
         <div class="stat-card">
             <div class="d-flex justify-content-between align-items-center">
                 <div>
-                    <h6 class="text-muted mb-2">สินค้าทั้งหมด</h6>
-                    <h3 class="fw-bold mb-0"><?= number_format($stats['total_products']) ?></h3>
-                    <small class="text-muted">รายการ</small>
+                    <h6 class="text-muted mb-2"><?= $c[0] ?></h6>
+                    <h3 class="fw-bold mb-0"><?= number_format($c[1]) ?></h3>
+                    <small class="text-muted"><?= $c[2] ?></small>
                 </div>
-                <div class="icon bg-primary-light">
-                    <i class="fas fa-box"></i>
+                <div class="icon bg-<?= $c[4] ?>-light">
+                    <i class="fas <?= $c[3] ?>"></i>
                 </div>
             </div>
         </div>
     </div>
-    
-    <div class="col-md-3">
-        <div class="stat-card">
-            <div class="d-flex justify-content-between align-items-center">
-                <div>
-                    <h6 class="text-muted mb-2">สต็อกรวม</h6>
-                    <h3 class="fw-bold mb-0"><?= number_format($stats['total_stock']) ?></h3>
-                    <small class="text-muted">ชิ้น</small>
-                </div>
-                <div class="icon bg-success-light">
-                    <i class="fas fa-cubes"></i>
-                </div>
-            </div>
-        </div>
-    </div>
-    
-    <div class="col-md-3">
-        <div class="stat-card">
-            <div class="d-flex justify-content-between align-items-center">
-                <div>
-                    <h6 class="text-muted mb-2">สินค้าใกล้หมด</h6>
-                    <h3 class="fw-bold mb-0"><?= number_format($stats['low_stock']) ?></h3>
-                    <small class="text-muted">รายการ</small>
-                </div>
-                <div class="icon bg-warning-light">
-                    <i class="fas fa-exclamation-triangle"></i>
-                </div>
-            </div>
-        </div>
-    </div>
-    
-    <div class="col-md-3">
-        <div class="stat-card">
-            <div class="d-flex justify-content-between align-items-center">
-                <div>
-                    <h6 class="text-muted mb-2">สินค้าหมด</h6>
-                    <h3 class="fw-bold mb-0"><?= number_format($stats['out_stock']) ?></h3>
-                    <small class="text-muted">รายการ</small>
-                </div>
-                <div class="icon bg-danger-light">
-                    <i class="fas fa-times-circle"></i>
-                </div>
-            </div>
-        </div>
-    </div>
+<?php endforeach; ?>
 </div>
 
-<!-- ตารางสินค้าที่ต้องแจ้งจัดซื้อ -->
+<!-- ตารางแจ้งจัดซื้อ -->
 <div class="card">
     <div class="card-header bg-white">
         <h5 class="mb-0">
@@ -126,35 +131,35 @@ $lowStockProducts = $conn->query("
         </h5>
     </div>
     <div class="card-body">
-        <?php if ($lowStockProducts->num_rows > 0): ?>
+        <?php if ($lowStockProducts && $lowStockProducts->num_rows > 0): ?>
             <div class="table-responsive">
-                <table class="table table-hover">
+                <table class="table table-hover align-middle">
                     <thead>
                         <tr>
                             <th>รหัสสินค้า</th>
                             <th>ชื่อสินค้า</th>
-                            <th class="text-center">สต็อกคงเหลือ</th>
-                            <th class="text-center">สต็อกขั้นต่ำ</th>
+                            <th class="text-center">คงเหลือ</th>
+                            <th class="text-center">ขั้นต่ำ</th>
                             <th class="text-center">สถานะ</th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php while ($row = $lowStockProducts->fetch_assoc()): ?>
                             <tr>
-                                <td><?= $row['product_code'] ?></td>
-                                <td><?= $row['product_name'] ?></td>
+                                <td><?= htmlspecialchars($row['product_code']) ?></td>
+                                <td><?= htmlspecialchars($row['product_name']) ?></td>
                                 <td class="text-center">
                                     <span class="badge <?= $row['quantity'] == 0 ? 'bg-danger' : 'bg-warning' ?>">
                                         <?= number_format($row['quantity']) ?> <?= $row['unit'] ?>
                                     </span>
                                 </td>
-                                <td class="text-center"><?= number_format($row['min_stock']) ?> <?= $row['unit'] ?></td>
                                 <td class="text-center">
-                                    <?php if ($row['quantity'] == 0): ?>
-                                        <span class="badge bg-danger">หมดสต็อก</span>
-                                    <?php else: ?>
-                                        <span class="badge bg-warning">ใกล้หมด</span>
-                                    <?php endif; ?>
+                                    <?= number_format($row['min_stock']) ?> <?= $row['unit'] ?>
+                                </td>
+                                <td class="text-center">
+                                    <span class="badge <?= $row['quantity'] == 0 ? 'bg-danger' : 'bg-warning' ?>">
+                                        <?= $row['quantity'] == 0 ? 'หมดสต็อก' : 'ใกล้หมด' ?>
+                                    </span>
                                 </td>
                             </tr>
                         <?php endwhile; ?>
@@ -163,11 +168,56 @@ $lowStockProducts = $conn->query("
             </div>
         <?php else: ?>
             <div class="alert alert-success mb-0">
-                <i class="fas fa-check-circle me-2"></i>
                 สินค้าทุกรายการมีสต็อกเพียงพอ
             </div>
         <?php endif; ?>
     </div>
 </div>
+
+<!-- กราฟสินค้ายอดนิยม -->
+<div class="card mt-4">
+    <div class="card-header bg-white">
+        <h5 class="mb-0">
+            <i class="fas fa-chart-bar text-primary me-2"></i>
+            สินค้ายอดนิยมในการเบิกออก
+        </h5>
+    </div>
+    <div class="card-body">
+        <?php if (!empty($chartLabels)): ?>
+            <canvas id="popularChart"></canvas>
+        <?php else: ?>
+            <div class="alert alert-info mb-0">
+                ยังไม่มีข้อมูลการเบิกสินค้า
+            </div>
+        <?php endif; ?>
+    </div>
+</div>
+
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script>
+<?php if (!empty($chartLabels)): ?>
+new Chart(document.getElementById('popularChart'), {
+    type: 'bar',
+    data: {
+        labels: <?= json_encode($chartLabels) ?>,
+        datasets: [{
+            label: 'จำนวนที่เบิก',
+            data: <?= json_encode($chartData) ?>,
+            borderWidth: 1
+        }]
+    },
+    options: {
+        responsive: true,
+        scales: {
+            y: {
+                beginAtZero: true
+            }
+        }
+    }
+});
+<?php endif; ?>
+</script>
 
 <?php include 'includes/footer.php'; ?>

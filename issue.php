@@ -1,311 +1,202 @@
 <?php
-
-
+// หน้าเบิกสินค้าออก
 require_once 'config.php';
 $pageTitle = 'เบิกสินค้าออก';
 include 'includes/header.php';
 
-// บันทึกการเบิกสินค้า
-if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+// ================== บันทึกการเบิก ==================
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $issue_date = clean($_POST['issue_date']);
-    $purpose = clean($_POST['purpose']);
-    $note = clean($_POST['note']);
-    $user_id = $_SESSION['user_id'];
-    
-    // เริ่ม Transaction
+    $purpose    = clean($_POST['purpose']);
+    $note       = clean($_POST['note']);
+    $user_id    = $_SESSION['user_id'];
+
     $conn->begin_transaction();
-    
+
     try {
-        // ตรวจสอบสต็อกก่อน
-        $hasError = false;
-        $errorMessages = [];
-        
-        foreach ($_POST['products'] as $index => $product_id) {
-            if (!empty($product_id) && !empty($_POST['quantities'][$index])) {
-                $product_id = (int)$product_id;
-                $quantity = (int)$_POST['quantities'][$index];
-                
-                // ตรวจสอบสต็อก
-                $result = $conn->query("SELECT i.quantity, p.product_name 
-                                       FROM inventory i 
-                                       JOIN products p ON i.product_id = p.product_id
-                                       WHERE i.product_id = $product_id");
-                $stock = $result->fetch_assoc();
-                
-                if ($stock['quantity'] < $quantity) {
-                    $hasError = true;
-                    $errorMessages[] = "สินค้า {$stock['product_name']} มีสต็อกไม่เพียงพอ (คงเหลือ {$stock['quantity']})";
-                }
+        // ตรวจ stock ซ้ำอีกครั้ง (กัน JS bypass)
+        foreach ($_POST['products'] as $i => $product_id) {
+            $product_id = (int)$product_id;
+            $qty = (int)$_POST['quantities'][$i];
+
+            $q = $conn->query("
+                SELECT quantity 
+                FROM inventory 
+                WHERE product_id = $product_id
+            ");
+            $stock = $q->fetch_assoc();
+
+            if ($qty > $stock['quantity']) {
+                throw new Exception('มีสินค้าบางรายการเบิกเกินสต็อก');
             }
         }
-        
-        if ($hasError) {
-            throw new Exception(implode('<br>', $errorMessages));
-        }
-        
-        // บันทึกหัวใบเบิกสินค้า
-        $sql = "INSERT INTO goods_issue (issue_date, user_id, purpose, note)
-                VALUES ('$issue_date', $user_id, '$purpose', '$note')";
-        $conn->query($sql);
+
+        // บันทึกหัวใบเบิก
+        $conn->query("
+            INSERT INTO goods_issue (issue_date, user_id, purpose, note)
+            VALUES ('$issue_date', $user_id, '$purpose', '$note')
+        ");
         $issue_id = $conn->insert_id;
-        
-        // บันทึกรายการสินค้า
-        foreach ($_POST['products'] as $index => $product_id) {
-            if (!empty($product_id) && !empty($_POST['quantities'][$index])) {
-                $product_id = (int)$product_id;
-                $quantity = (int)$_POST['quantities'][$index];
-                
-                // บันทึกรายการ
-                $sql = "INSERT INTO goods_issue_items (issue_id, product_id, quantity)
-                        VALUES ($issue_id, $product_id, $quantity)";
-                $conn->query($sql);
-                
-                // ลดสต็อก
-                $sql = "UPDATE inventory SET quantity = quantity - $quantity WHERE product_id = $product_id";
-                $conn->query($sql);
-                
-                // บันทึกประวัติการเคลื่อนไหว
-                $sql = "INSERT INTO stock_movement (product_id, movement_type, quantity, reference_type, reference_id, note)
-                        VALUES ($product_id, 'out', $quantity, 'issue', $issue_id, 'เบิกสินค้าออก')";
-                $conn->query($sql);
-            }
+
+        // บันทึกรายการ + ตัดสต็อก
+        foreach ($_POST['products'] as $i => $product_id) {
+            $product_id = (int)$product_id;
+            $qty = (int)$_POST['quantities'][$i];
+
+            $conn->query("
+                INSERT INTO goods_issue_items (issue_id, product_id, quantity)
+                VALUES ($issue_id, $product_id, $qty)
+            ");
+
+            $conn->query("
+                UPDATE inventory 
+                SET quantity = quantity - $qty 
+                WHERE product_id = $product_id
+            ");
+
+            $conn->query("
+                INSERT INTO stock_movement
+                (product_id, movement_type, quantity, reference_type, reference_id, note)
+                VALUES ($product_id,'out',$qty,'issue',$issue_id,'เบิกสินค้า')
+            ");
         }
-        
+
         $conn->commit();
-        setAlert('success', 'บันทึกการเบิกสินค้าเรียบร้อยแล้ว');
-        redirect('issue.php');
-        
+        redirect("issue_detail.php?id=$issue_id");
     } catch (Exception $e) {
         $conn->rollback();
-        setAlert('danger', 'เกิดข้อผิดพลาด: ' . $e->getMessage());
+        setAlert('danger', $e->getMessage());
     }
 }
 
-// ดึงข้อมูลสินค้าพร้อมสต็อก
+// ================== ดึงสินค้า ==================
 $products = $conn->query("
-    SELECT p.*, i.quantity
+    SELECT p.product_id, p.product_code, p.product_name, p.unit,
+           IFNULL(i.quantity,0) AS stock
     FROM products p
     LEFT JOIN inventory i ON p.product_id = i.product_id
     ORDER BY p.product_name
 ");
-
-// ดึงประวัติการเบิกสินค้า (10 รายการล่าสุด)
-$recentIssues = $conn->query("
-    SELECT gi.*, u.full_name,
-           COUNT(gii.item_id) as item_count
-    FROM goods_issue gi
-    LEFT JOIN users u ON gi.user_id = u.user_id
-    LEFT JOIN goods_issue_items gii ON gi.issue_id = gii.issue_id
-    GROUP BY gi.issue_id
-    ORDER BY gi.created_at DESC
-    LIMIT 10
-");
 ?>
 
 <div class="page-header">
-    <h3 class="mb-0">
-        <i class="fas fa-dolly text-primary me-2"></i>
-        เบิกสินค้าออกจากคลัง
-    </h3>
+    <h3><i class="fas fa-dolly text-primary me-2"></i>เบิกสินค้าออก</h3>
     <p class="text-muted mb-0">บันทึกการเบิกสินค้าออกจากคลัง</p>
 </div>
 
-<!-- ฟอร์มเบิกสินค้า -->
 <div class="card">
-    <div class="card-header bg-white">
-        <h5 class="mb-0">บันทึกเบิกสินค้าออก</h5>
-    </div>
     <div class="card-body">
-        <form method="POST" id="issueForm">
-            <div class="row">
-                <div class="col-md-6 mb-3">
-                    <label class="form-label">วันที่เบิกสินค้า <span class="text-danger">*</span></label>
+        <form method="post" id="issueForm">
+
+            <div class="row mb-3">
+                <div class="col-md-4">
+                    <label class="form-label">วันที่เบิก</label>
                     <input type="date" name="issue_date" class="form-control" required value="<?= date('Y-m-d') ?>">
                 </div>
-                <div class="col-md-6 mb-3">
-                    <label class="form-label">วัตถุประสงค์ <span class="text-danger">*</span></label>
-                    <input type="text" name="purpose" class="form-control" required placeholder="เช่น ขายหน้าร้าน, โอนสาขา">
+                <div class="col-md-8">
+                    <label class="form-label">วัตถุประสงค์</label>
+                    <input type="text" name="purpose" class="form-control" required>
                 </div>
             </div>
-            
-            <h5 class="mt-4 mb-3">รายการสินค้า</h5>
-            <div id="itemsContainer">
-                <div class="row mb-2 item-row">
-                    <div class="col-md-6">
-                        <label class="form-label">สินค้า</label>
-                        <select name="products[]" class="form-select product-select" required onchange="updateStock(this)">
-                            <option value="">เลือกสินค้า</option>
-                            <?php while ($product = $products->fetch_assoc()): ?>
-                                <option value="<?= $product['product_id'] ?>" data-stock="<?= $product['quantity'] ?>">
-                                    <?= $product['product_code'] ?> - <?= $product['product_name'] ?> 
-                                    (คงเหลือ: <?= number_format($product['quantity']) ?> <?= $product['unit'] ?>)
-                                </option>
-                            <?php endwhile; ?>
-                        </select>
-                    </div>
-                    <div class="col-md-3">
-                        <label class="form-label">จำนวน</label>
-                        <input type="number" name="quantities[]" class="form-control" required min="1">
-                        <small class="text-muted stock-info"></small>
-                    </div>
-                    <div class="col-md-3">
-                        <label class="form-label">&nbsp;</label>
-                        <button type="button" class="btn btn-danger w-100" onclick="removeItem(this)">
-                            <i class="fas fa-trash"></i> ลบ
-                        </button>
-                    </div>
-                </div>
-            </div>
-            
-            <button type="button" class="btn btn-secondary" onclick="addItem()">
-                <i class="fas fa-plus me-2"></i>เพิ่มรายการ
+
+            <h5 class="mb-3">รายการสินค้า</h5>
+
+            <div id="items"></div>
+
+            <button type="button" class="btn btn-secondary mt-2" onclick="addRow()">
+                <i class="fas fa-plus"></i> เพิ่มสินค้า
             </button>
-            
-            <div class="mt-4">
+
+            <div class="alert alert-info mt-3">
+                📊 จำนวนรวมทั้งหมด: <strong><span id="totalQty">0</span></strong> ชิ้น
+            </div>
+
+            <div class="mb-3">
                 <label class="form-label">หมายเหตุ</label>
-                <textarea name="note" class="form-control" rows="3"></textarea>
+                <textarea name="note" class="form-control"></textarea>
             </div>
-            
-            <div class="mt-4">
-                <button type="submit" class="btn btn-primary">
-                    <i class="fas fa-check me-2"></i>บันทึกเบิกสินค้า
-                </button>
-                <button type="reset" class="btn btn-secondary">
-                    <i class="fas fa-redo me-2"></i>ล้างข้อมูล
-                </button>
-            </div>
+
+            <button class="btn btn-primary">
+                <i class="fas fa-save me-1"></i>บันทึกเบิกสินค้า
+            </button>
+
         </form>
     </div>
 </div>
 
-<!-- ประวัติการเบิกสินค้า -->
-<div class="card">
-    <div class="card-header bg-white">
-        <h5 class="mb-0">ประวัติการเบิกสินค้า (10 รายการล่าสุด)</h5>
-    </div>
-    <div class="card-body">
-        <div class="table-responsive">
-            <table class="table table-hover">
-                <thead>
-                    <tr>
-                        <th>เลขที่</th>
-                        <th>วันที่</th>
-                        <th>วัตถุประสงค์</th>
-                        <th>จำนวนรายการ</th>
-                        <th>ผู้บันทึก</th>
-                        <th class="text-center">ดูรายละเอียด</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php if ($recentIssues->num_rows > 0): ?>
-                        <?php while ($issue = $recentIssues->fetch_assoc()): ?>
-                            <tr>
-                                <td><strong>#<?= str_pad($issue['issue_id'], 5, '0', STR_PAD_LEFT) ?></strong></td>
-                                <td><?= date('d/m/Y', strtotime($issue['issue_date'])) ?></td>
-                                <td><?= $issue['purpose'] ?></td>
-                                <td><span class="badge bg-info"><?= $issue['item_count'] ?> รายการ</span></td>
-                                <td><?= $issue['full_name'] ?></td>
-                                <td class="text-center">
-                                    <a href="issue_detail.php?id=<?= $issue['issue_id'] ?>" class="btn btn-sm btn-primary">
-                                        <i class="fas fa-eye"></i>
-                                    </a>
-                                </td>
-                            </tr>
-                        <?php endwhile; ?>
-                    <?php else: ?>
-                        <tr>
-                            <td colspan="6" class="text-center text-muted">ยังไม่มีประวัติการเบิกสินค้า</td>
-                        </tr>
-                    <?php endif; ?>
-                </tbody>
-            </table>
-        </div>
-    </div>
-</div>
-
 <script>
-// ตัวแปรเก็บ HTML ของสินค้า
-const productOptions = `
-    <option value="">เลือกสินค้า</option>
-    <?php 
-    $products->data_seek(0);
-    while ($product = $products->fetch_assoc()): 
-    ?>
-        <option value="<?= $product['product_id'] ?>" data-stock="<?= $product['quantity'] ?>">
-            <?= $product['product_code'] ?> - <?= $product['product_name'] ?> 
-            (คงเหลือ: <?= number_format($product['quantity']) ?> <?= $product['unit'] ?>)
-        </option>
-    <?php endwhile; ?>
-`;
+const products = <?= json_encode($products->fetch_all(MYSQLI_ASSOC)) ?>;
 
-function updateStock(select) {
-    const row = select.closest('.item-row');
-    const stockInfo = row.querySelector('.stock-info');
-    const quantityInput = row.querySelector('input[name="quantities[]"]');
-    const selectedOption = select.options[select.selectedIndex];
-    const stock = selectedOption.getAttribute('data-stock');
-    
-    if (stock) {
-        stockInfo.textContent = `คงเหลือ: ${stock} หน่วย`;
-        quantityInput.max = stock;
-    } else {
-        stockInfo.textContent = '';
-        quantityInput.max = '';
-    }
-}
+function addRow() {
+    const row = document.createElement('div');
+    row.className = 'row mb-2 item-row';
 
-function addItem() {
-    const container = document.getElementById('itemsContainer');
-    const newRow = document.createElement('div');
-    newRow.className = 'row mb-2 item-row';
-    newRow.innerHTML = `
+    row.innerHTML = `
         <div class="col-md-6">
-            <select name="products[]" class="form-select product-select" required onchange="updateStock(this)">
-                ${productOptions}
+            <select class="form-select product" name="products[]" onchange="syncProducts()" required>
+                <option value="">เลือกสินค้า</option>
+                ${products.map(p =>
+                    `<option value="${p.product_id}" data-stock="${p.stock}">
+                        ${p.product_code} - ${p.product_name} (คงเหลือ ${p.stock} ${p.unit})
+                    </option>`
+                ).join('')}
             </select>
         </div>
         <div class="col-md-3">
-            <input type="number" name="quantities[]" class="form-control" required min="1">
-            <small class="text-muted stock-info"></small>
+            <input type="number" name="quantities[]" class="form-control qty"
+                   min="1" oninput="calcTotal()" required>
+            <small class="text-danger stock-warning"></small>
         </div>
         <div class="col-md-3">
-            <button type="button" class="btn btn-danger w-100" onclick="removeItem(this)">
-                <i class="fas fa-trash"></i> ลบ
+            <button type="button" class="btn btn-danger w-100" onclick="this.closest('.item-row').remove();syncProducts();calcTotal();">
+                ลบ
             </button>
         </div>
     `;
-    container.appendChild(newRow);
+    document.getElementById('items').appendChild(row);
 }
 
-function removeItem(btn) {
-    const rows = document.querySelectorAll('.item-row');
-    if (rows.length > 1) {
-        btn.closest('.item-row').remove();
-    } else {
-        alert('ต้องมีอย่างน้อย 1 รายการ');
-    }
+// ปิดการเลือกสินค้าซ้ำ
+function syncProducts() {
+    const selected = [...document.querySelectorAll('.product')]
+        .map(s => s.value)
+        .filter(v => v);
+
+    document.querySelectorAll('.product').forEach(select => {
+        [...select.options].forEach(opt => {
+            opt.disabled = selected.includes(opt.value) && opt.value !== select.value;
+        });
+    });
+    calcTotal();
 }
 
-// Validate form ก่อน submit
-document.getElementById('issueForm').addEventListener('submit', function(e) {
-    const rows = document.querySelectorAll('.item-row');
-    let hasError = false;
-    
-    rows.forEach(row => {
-        const select = row.querySelector('select[name="products[]"]');
-        const quantity = parseInt(row.querySelector('input[name="quantities[]"]').value);
-        const stock = parseInt(select.options[select.selectedIndex].getAttribute('data-stock'));
-        
-        if (quantity > stock) {
-            hasError = true;
-            alert('จำนวนเบิกเกินสต็อกคงเหลือ กรุณาตรวจสอบ');
+// คำนวณ + แจ้งเตือนเกิน stock
+function calcTotal() {
+    let total = 0;
+    document.querySelectorAll('.item-row').forEach(row => {
+        const qty = row.querySelector('.qty');
+        const select = row.querySelector('.product');
+        const warn = row.querySelector('.stock-warning');
+
+        if (!select.value) return;
+
+        const stock = parseInt(select.selectedOptions[0].dataset.stock);
+        const val = parseInt(qty.value || 0);
+
+        if (val > stock) {
+            warn.textContent = '❌ เบิกเกินสต็อก';
+            qty.classList.add('is-invalid');
+        } else {
+            warn.textContent = '';
+            qty.classList.remove('is-invalid');
+            total += val;
         }
     });
-    
-    if (hasError) {
-        e.preventDefault();
-    }
-});
+    document.getElementById('totalQty').innerText = total;
+}
+
+// เริ่มต้น 1 แถว
+addRow();
 </script>
 
 <?php include 'includes/footer.php'; ?>

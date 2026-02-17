@@ -1,6 +1,5 @@
 <?php
 
-
 require_once 'config.php';
 $pageTitle = 'สต็อกคงเหลือ';
 include 'includes/header.php';
@@ -11,7 +10,10 @@ $statusFilter = isset($_GET['status']) ? $_GET['status'] : 'all';
 $searchTerm = isset($_GET['search']) ? clean($_GET['search']) : '';
 
 // สร้าง SQL Query
-$sql = "SELECT p.*, c.category_name, i.quantity, i.location
+$sql = "SELECT 
+            p.*, 
+            c.category_name, 
+            COALESCE(i.quantity,0) AS quantity
         FROM products p
         LEFT JOIN categories c ON p.category_id = c.category_id
         LEFT JOIN inventory i ON p.product_id = i.product_id
@@ -55,22 +57,12 @@ $statsQuery = $conn->query("
     LEFT JOIN inventory i ON p.product_id = i.product_id
 ");
 
-// ตรวจสอบว่า query สำเร็จหรือไม่
-if (!$statsQuery) {
-    die("Error in stats query: " . $conn->error);
-}
-
-$stats = $statsQuery->fetch_assoc();
-
-// ถ้าไม่มีข้อมูล ให้ใช้ค่าเริ่มต้น
-if (!$stats) {
-    $stats = [
-        'total' => 0,
-        'normal' => 0,
-        'low' => 0,
-        'out_stock' => 0
-    ];
-}
+$stats = $statsQuery ? $statsQuery->fetch_assoc() : [
+    'total' => 0,
+    'normal' => 0,
+    'low' => 0,
+    'out_stock' => 0
+];
 ?>
 
 <div class="page-header">
@@ -83,58 +75,29 @@ if (!$stats) {
 
 <!-- สถิติสรุป -->
 <div class="row">
+<?php
+$cards = [
+    ['สินค้าทั้งหมด',$stats['total'],'primary','fa-boxes'],
+    ['สต็อกปกติ',$stats['normal'],'success','fa-check-circle'],
+    ['สต็อกใกล้หมด',$stats['low'],'warning','fa-exclamation-triangle'],
+    ['สินค้าหมด',$stats['out_stock'],'danger','fa-times-circle']
+];
+foreach ($cards as $c):
+?>
     <div class="col-md-3">
         <div class="stat-card">
             <div class="d-flex justify-content-between align-items-center">
                 <div>
-                    <h6 class="text-muted mb-2">สินค้าทั้งหมด</h6>
-                    <h3 class="fw-bold mb-0"><?= number_format($stats['total']) ?></h3>
+                    <h6 class="text-muted mb-2"><?= $c[0] ?></h6>
+                    <h3 class="fw-bold mb-0 text-<?= $c[2] ?>"><?= number_format($c[1]) ?></h3>
                 </div>
-                <div class="icon bg-primary-light">
-                    <i class="fas fa-boxes"></i>
-                </div>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="stat-card">
-            <div class="d-flex justify-content-between align-items-center">
-                <div>
-                    <h6 class="text-muted mb-2">สต็อกปกติ</h6>
-                    <h3 class="fw-bold mb-0 text-success"><?= number_format($stats['normal']) ?></h3>
-                </div>
-                <div class="icon bg-success-light">
-                    <i class="fas fa-check-circle"></i>
+                <div class="icon bg-<?= $c[2] ?>-light">
+                    <i class="fas <?= $c[3] ?>"></i>
                 </div>
             </div>
         </div>
     </div>
-    <div class="col-md-3">
-        <div class="stat-card">
-            <div class="d-flex justify-content-between align-items-center">
-                <div>
-                    <h6 class="text-muted mb-2">สต็อกใกล้หมด</h6>
-                    <h3 class="fw-bold mb-0 text-warning"><?= number_format($stats['low']) ?></h3>
-                </div>
-                <div class="icon bg-warning-light">
-                    <i class="fas fa-exclamation-triangle"></i>
-                </div>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="stat-card">
-            <div class="d-flex justify-content-between align-items-center">
-                <div>
-                    <h6 class="text-muted mb-2">สินค้าหมด</h6>
-                    <h3 class="fw-bold mb-0 text-danger"><?= number_format($stats['out_stock']) ?></h3>
-                </div>
-                <div class="icon bg-danger-light">
-                    <i class="fas fa-times-circle"></i>
-                </div>
-            </div>
-        </div>
-    </div>
+<?php endforeach; ?>
 </div>
 
 <!-- ค้นหาและกรอง -->
@@ -142,7 +105,8 @@ if (!$stats) {
     <div class="card-body">
         <form method="GET" class="row g-3">
             <div class="col-md-4">
-                <input type="text" name="search" class="form-control" placeholder="ค้นหาสินค้า..." value="<?= htmlspecialchars($searchTerm) ?>">
+                <input type="text" name="search" class="form-control"
+                       placeholder="ค้นหาสินค้า..." value="<?= htmlspecialchars($searchTerm) ?>">
             </div>
             <div class="col-md-3">
                 <select name="category" class="form-select">
@@ -156,14 +120,14 @@ if (!$stats) {
             </div>
             <div class="col-md-3">
                 <select name="status" class="form-select">
-                    <option value="all" <?= $statusFilter == 'all' ? 'selected' : '' ?>>ทุกสถานะ</option>
-                    <option value="normal" <?= $statusFilter == 'normal' ? 'selected' : '' ?>>สต็อกปกติ</option>
-                    <option value="low" <?= $statusFilter == 'low' ? 'selected' : '' ?>>สต็อกใกล้หมด</option>
-                    <option value="out" <?= $statusFilter == 'out' ? 'selected' : '' ?>>สินค้าหมด</option>
+                    <option value="all">ทุกสถานะ</option>
+                    <option value="normal">สต็อกปกติ</option>
+                    <option value="low">สต็อกใกล้หมด</option>
+                    <option value="out">สินค้าหมด</option>
                 </select>
             </div>
             <div class="col-md-2">
-                <button type="submit" class="btn btn-primary w-100">
+                <button class="btn btn-primary w-100">
                     <i class="fas fa-search me-2"></i>ค้นหา
                 </button>
             </div>
@@ -171,100 +135,54 @@ if (!$stats) {
     </div>
 </div>
 
-<!-- ตารางสต็อก -->
+<!-- ตาราง -->
 <div class="card">
-    <div class="card-header bg-white d-flex justify-content-between align-items-center">
-        <h5 class="mb-0">รายการสินค้าคงเหลือ</h5>
-        <button class="btn btn-success btn-sm" onclick="exportToExcel()">
-            <i class="fas fa-file-excel me-2"></i>Export Excel
-        </button>
-    </div>
-    <div class="card-body">
-        <div class="table-responsive">
-            <table class="table table-hover" id="stockTable">
-                <thead>
-                    <tr>
-                        <th>รหัสสินค้า</th>
-                        <th>ชื่อสินค้า</th>
-                        <th>หมวดหมู่</th>
-                        <th>แบรนด์</th>
-                        <th class="text-center">สต็อกคงเหลือ</th>
-                        <th class="text-center">สต็อกขั้นต่ำ</th>
-                        <th>ตำแหน่ง</th>
-                        <th class="text-center">สถานะ</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php if ($products->num_rows > 0): ?>
-                        <?php while ($row = $products->fetch_assoc()): 
-                            $quantity = $row['quantity'] ?? 0;
-                            $status = 'normal';
-                            $statusText = 'ปกติ';
-                            $statusBadge = 'bg-success';
-                            
-                            if ($quantity == 0) {
-                                $status = 'out';
-                                $statusText = 'หมดสต็อก';
-                                $statusBadge = 'bg-danger';
-                            } elseif ($quantity <= $row['min_stock']) {
-                                $status = 'low';
-                                $statusText = 'ใกล้หมด';
-                                $statusBadge = 'bg-warning';
-                            }
-                        ?>
-                            <tr class="status-<?= $status ?>">
-                                <td><strong><?= $row['product_code'] ?></strong></td>
-                                <td><?= $row['product_name'] ?></td>
-                                <td><span class="badge bg-info"><?= $row['category_name'] ?></span></td>
-                                <td><?= $row['brand'] ?></td>
-                                <td class="text-center">
-                                    <span class="badge <?= $statusBadge ?>">
-                                        <?= number_format($quantity) ?> <?= $row['unit'] ?>
-                                    </span>
-                                </td>
-                                <td class="text-center"><?= number_format($row['min_stock']) ?> <?= $row['unit'] ?></td>
-                                <td><?= $row['location'] ?? '-' ?></td>
-                                <td class="text-center">
-                                    <span class="badge <?= $statusBadge ?>"><?= $statusText ?></span>
-                                </td>
-                            </tr>
-                        <?php endwhile; ?>
-                    <?php else: ?>
-                        <tr>
-                            <td colspan="8" class="text-center text-muted">
-                                <i class="fas fa-inbox fa-3x mb-3 d-block"></i>
-                                ไม่พบข้อมูลสินค้า
-                            </td>
-                        </tr>
-                    <?php endif; ?>
-                </tbody>
-            </table>
-        </div>
+    <div class="card-body table-responsive">
+        <table class="table table-hover" id="stockTable">
+            <thead>
+                <tr>
+                    <th>รหัสสินค้า</th>
+                    <th>ชื่อสินค้า</th>
+                    <th>หมวดหมู่</th>
+                    <th>แบรนด์</th>
+                    <th class="text-center">สต็อกคงเหลือ</th>
+                    <th class="text-center">สต็อกขั้นต่ำ</th>
+                    <th class="text-center">สถานะ</th>
+                </tr>
+            </thead>
+            <tbody>
+            <?php if ($products && $products->num_rows): ?>
+                <?php while ($row = $products->fetch_assoc()):
+                    $qty = $row['quantity'];
+                    $badge = 'bg-success';
+                    $text = 'ปกติ';
+                    if ($qty == 0) { $badge='bg-danger'; $text='หมดสต็อก'; }
+                    elseif ($qty <= $row['min_stock']) { $badge='bg-warning'; $text='ใกล้หมด'; }
+                ?>
+                <tr>
+                    <td><strong><?= $row['product_code'] ?></strong></td>
+                    <td><?= $row['product_name'] ?></td>
+                    <td><span class="badge bg-info"><?= $row['category_name'] ?></span></td>
+                    <td><?= $row['brand'] ?></td>
+                    <td class="text-center">
+                        <span class="badge <?= $badge ?>">
+                            <?= number_format($qty) ?> <?= $row['unit'] ?>
+                        </span>
+                    </td>
+                    <td class="text-center"><?= number_format($row['min_stock']) ?> <?= $row['unit'] ?></td>
+                    <td class="text-center">
+                        <span class="badge <?= $badge ?>"><?= $text ?></span>
+                    </td>
+                </tr>
+                <?php endwhile; ?>
+            <?php else: ?>
+                <tr>
+                    <td colspan="7" class="text-center text-muted">ไม่พบข้อมูลสินค้า</td>
+                </tr>
+            <?php endif; ?>
+            </tbody>
+        </table>
     </div>
 </div>
-
-<script>
-function exportToExcel() {
-    // ฟังก์ชันง่ายๆ ส่งออก HTML Table เป็น Excel
-    let table = document.getElementById('stockTable');
-    let html = table.outerHTML;
-    let url = 'data:application/vnd.ms-excel,' + encodeURIComponent(html);
-    let downloadLink = document.createElement("a");
-    document.body.appendChild(downloadLink);
-    downloadLink.href = url;
-    downloadLink.download = 'stock_report_' + new Date().toISOString().slice(0,10) + '.xls';
-    downloadLink.click();
-    document.body.removeChild(downloadLink);
-}
-</script>
-
-<style>
-.status-out {
-    background-color: #ffebee;
-}
-.status-low {
-    background-color: #fff3e0;
-}
-</style>
 
 <?php include 'includes/footer.php'; ?>
