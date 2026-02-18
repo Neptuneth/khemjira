@@ -23,62 +23,62 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             </a>
         </li>
 
-        <li class="menu-title">จัดการสินค้า</li>
-
-        <li>
-            <a href="products.php" class="nav-link <?= $currentPage === 'products.php' ? 'active' : '' ?>">
-                <i class="fas fa-box"></i> จัดการสินค้า
-            </a>
-        </li>
-        <li>
-            <a href="categories.php" class="nav-link <?= $currentPage === 'categories.php' ? 'active' : '' ?>">
-                <i class="fas fa-tags"></i> หมวดหมู่สินค้า
-            </a>
-        </li>
-
-        <li class="menu-title">คลังสินค้า</li>
-
-        <li>
-            <a href="receive.php" class="nav-link <?= $currentPage === 'receive.php' ? 'active' : '' ?>">
-                <i class="fas fa-truck-loading"></i> รับสินค้าเข้า
-            </a>
-        </li>
         <li>
             <a href="issue.php" class="nav-link <?= $currentPage === 'issue.php' ? 'active' : '' ?>">
                 <i class="fas fa-dolly"></i> เบิกสินค้าออก
             </a>
         </li>
-        <li>
-            <a href="stock.php" class="nav-link <?= $currentPage === 'stock.php' ? 'active' : '' ?>">
-                <i class="fas fa-warehouse"></i> สต็อกคงเหลือ
-            </a>
-        </li>
-        <li>
-            <a href="stock_adjustment.php" class="nav-link <?= $currentPage === 'stock_adjustment.php' ? 'active' : '' ?>">
-                <i class="fas fa-edit"></i> ปรับแก้สต็อก
-            </a>
-        </li>
-
-        <li class="menu-title">รายงานและอื่นๆ</li>
-
-        <li>
-            <a href="reports.php" class="nav-link <?= $currentPage === 'reports.php' ? 'active' : '' ?>">
-                <i class="fas fa-chart-bar"></i> รายงาน
-            </a>
-        </li>
-        <li>
-            <a href="suppliers.php" class="nav-link <?= $currentPage === 'suppliers.php' ? 'active' : '' ?>">
-                <i class="fas fa-truck"></i> ซัพพลายเออร์
-            </a>
-        </li>
 
         <?php if ($role === 'admin'): ?>
+
+            <li class="menu-title">จัดการสินค้า</li>
+            <li>
+                <a href="products.php" class="nav-link <?= $currentPage === 'products.php' ? 'active' : '' ?>">
+                    <i class="fas fa-box"></i> จัดการสินค้า
+                </a>
+            </li>
+            <li>
+                <a href="categories.php" class="nav-link <?= $currentPage === 'categories.php' ? 'active' : '' ?>">
+                    <i class="fas fa-tags"></i> หมวดหมู่สินค้า
+                </a>
+            </li>
+
+            <li class="menu-title">คลังสินค้า</li>
+            <li>
+                <a href="receive.php" class="nav-link <?= $currentPage === 'receive.php' ? 'active' : '' ?>">
+                    <i class="fas fa-truck-loading"></i> รับสินค้าเข้า
+                </a>
+            </li>
+            <li>
+                <a href="stock.php" class="nav-link <?= $currentPage === 'stock.php' ? 'active' : '' ?>">
+                    <i class="fas fa-warehouse"></i> สต็อกคงเหลือ
+                </a>
+            </li>
+            <li>
+                <a href="stock_adjustment.php" class="nav-link <?= $currentPage === 'stock_adjustment.php' ? 'active' : '' ?>">
+                    <i class="fas fa-edit"></i> ปรับแก้สต็อก
+                </a>
+            </li>
+
+            <li class="menu-title">รายงานและอื่นๆ</li>
+            <li>
+                <a href="reports.php" class="nav-link <?= $currentPage === 'reports.php' ? 'active' : '' ?>">
+                    <i class="fas fa-chart-bar"></i> รายงาน
+                </a>
+            </li>
+            <li>
+                <a href="suppliers.php" class="nav-link <?= $currentPage === 'suppliers.php' ? 'active' : '' ?>">
+                    <i class="fas fa-truck"></i> ซัพพลายเออร์
+                </a>
+            </li>
+
             <li class="menu-title">ตั้งค่าระบบ</li>
             <li>
                 <a href="users.php" class="nav-link <?= $currentPage === 'users.php' ? 'active' : '' ?>">
                     <i class="fas fa-users"></i> จัดการผู้ใช้งาน
                 </a>
             </li>
+
         <?php endif; ?>
 
     </ul>

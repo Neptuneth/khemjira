@@ -55,6 +55,13 @@ function isAdmin() {
     return isset($_SESSION['role']) && $_SESSION['role'] === 'admin';
 }
 
+function requireAdmin() {
+    requireLogin();
+    if (!isAdmin()) {
+        redirect('dashboard.php');
+    }
+}
+
 // ===============================
 // Alert Functions
 function setAlert($type, $message) {
